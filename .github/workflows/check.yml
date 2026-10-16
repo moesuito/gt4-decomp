@@ -85,3 +85,49 @@ jobs:
           done < /tmp/sources.txt
           echo "$(ls /tmp/obj | wc -l) sources compiled"
           exit $fail
+
+      - name: Export compiled source objects for local binary proof
+        run: |
+          python -m pip install rabbitizer
+          python - <<'PY'
+          import hashlib, json, pathlib, subprocess, sys
+          sys.path.insert(0, 'tools')
+          import build, compiler_alignment, project
+          out = pathlib.Path('/tmp/gt4-source-cache')
+          out.mkdir()
+          headers = hashlib.sha1()
+          inc = pathlib.Path('include')
+          for fp in sorted(inc.rglob('*')):
+              if fp.is_file():
+                  headers.update(fp.relative_to(inc).as_posix().encode() + b'\0' + fp.read_bytes())
+          # Match the full builder's directory traversal, including its ordering.
+          import os
+          headers = hashlib.sha1()
+          for directory, dirs, files in os.walk('include'):
+              dirs.sort()
+              for name in sorted(files):
+                  fp = pathlib.Path(directory) / name
+                  headers.update(fp.relative_to(inc).as_posix().encode() + b'\0' + fp.read_bytes())
+          for index, source in enumerate(pathlib.Path('/tmp/sources.txt').read_text().splitlines(), 1):
+              addr = project.source_address(source)
+              if addr is None:
+                  raise RuntimeError('Unresolved source: ' + source)
+              raw = pathlib.Path('/tmp/obj') / (str(index) + '.o')
+              profile = project.source_compiler(source)
+              compiler_alignment.repair(pathlib.Path(source).resolve(), raw, project.compiler_command(profile))
+              stem = pathlib.Path(source).stem
+              objname = 'func_%08X' % addr
+              subprocess.run(['mips-linux-gnu-objcopy', *build.STRIP.split(), '--wildcard', '-G', stem + '*', '-G', objname + '*', str(raw), str(out / (objname + '.o'))], check=True)
+              digest = hashlib.sha1(pathlib.Path(source).read_bytes() + headers.digest()).hexdigest()
+              rel = pathlib.Path(source).relative_to('src').as_posix()
+              (out / (objname + '.src')).write_text('%s %s %s\n' % (rel, profile or 'default', digest))
+          manifest = {'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'headers_sha1': headers.hexdigest(), 'objects': len(list(out.glob('*.o'))), 'note': 'Built from public sources only; original compiler flags and verified alignment retry; no game input.'}
+          (out / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+          print(manifest)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gt4-source-object-cache
+          path: /tmp/gt4-source-cache
+          retention-days: 3
+          compression-level: 1
