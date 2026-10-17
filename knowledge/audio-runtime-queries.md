@@ -77,3 +77,27 @@ The worker loop `00558330` remains at 39/65 differing instructions; the
 initialization/thread-setup candidate `005585C8` remains at 65/69. Both are
 excluded from `src/`. Their partial state meanings and frame/register
 differences are recorded in the attempts diary for later investigation.
+
+## Complete-build proof
+
+The non-partial build of clean source commit
+`1cd1c9cbcd96845f17c48d843d1164d22cbf8c1a` passed with
+`tools/build.py --jobs 2`. All six additions have the exact status `linked`,
+contributing **824 additional linked code bytes** beyond the PR 24 branch
+boundary above. In address order their sizes are 124, 112, 268, 116, 88 and
+116 bytes. The sixteen functions from PR 24 also remain individually linked.
+
+The build covers 29,079 sources and 4,169,884 linked code bytes, with 55,106
+verified source data bytes, no orphan sources and no duplicate sources.
+Both segments are identical to the original:
+
+- `.text`: `28422e7e20a6298224294255355487b9a22cef31`
+- `.data`: `c28c833f9716467545bf362f321e9acc876c3603`
+
+All 85 repository tests, the command-wrapper sanitizer fixtures, assembly
+policy checks and source organization check passed. README progress was
+regenerated from this full build with `tools/report.py` and
+`tools/update_readme.py`. The upstream refresh still resolved to
+`6e18ca3768811c5338401f42b6e13e619e502428`; PR 24 remained open and both of
+its GitHub check jobs had passed. This continuation stays on a separate
+branch while additional related work is accumulated.
